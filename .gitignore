@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+data/
+!data/.gitkeep
+venv/
+.venv/
+node_modules/
+*.mp3
+*.wav
+*.ogg
+.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/

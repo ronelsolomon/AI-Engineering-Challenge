@@ -1,0 +1,10 @@
+fastapi==0.115.6
+uvicorn==0.34.0
+twilio==9.11.0
+openai==1.63.2
+deepgram-sdk==7.7.0
+python-dotenv==1.0.1
+pydub==0.25.1
+websockets==14.0
+aiofiles==24.1.0
+requests==2.32.3
