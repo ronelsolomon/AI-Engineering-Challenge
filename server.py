@@ -77,6 +77,18 @@ async def handle_speech(request: Request):
         return PlainTextResponse(str(response), media_type="application/xml")
     
     transcript_path = os.path.join(TRANSCRIPTS_DIR, f"{scenario_id}_{call_sid}.txt")
+    
+    timeout_count = 0
+    if os.path.exists(transcript_path):
+        with open(transcript_path, "r") as f:
+            content = f.read()
+            timeout_count = content.count("I'm sorry, I didn't catch that")
+    
+    if timeout_count >= 3:
+        response.say("I'm having trouble hearing you. Goodbye.", voice="alice")
+        response.hangup()
+        return PlainTextResponse(str(response), media_type="application/xml")
+    
     with open(transcript_path, "a") as f:
         f.write(f"Agent: {speech_result}\n")
     
