@@ -7,7 +7,7 @@ from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from twilio.twiml.voice_response import VoiceResponse, Play, Gather, Say
-from config import BASE_URL, CALLS_DIR, TRANSCRIPTS_DIR, AUDIO_DIR
+from config import BASE_URL, PUBLIC_URL, CALLS_DIR, TRANSCRIPTS_DIR, AUDIO_DIR
 from scenarios import SCENARIOS
 from conversation import get_response
 from synthesizer import synthesize
@@ -79,13 +79,20 @@ async def handle_speech(request: Request):
     transcript_path = os.path.join(TRANSCRIPTS_DIR, f"{scenario_id}_{call_sid}.txt")
     
     timeout_count = 0
+    patient_turn_count = 0
     if os.path.exists(transcript_path):
         with open(transcript_path, "r") as f:
             content = f.read()
             timeout_count = content.count("I'm sorry, I didn't catch that")
+            patient_turn_count = content.count("Patient:")
     
     if timeout_count >= 3:
         response.say("I'm having trouble hearing you. Goodbye.", voice="alice")
+        response.hangup()
+        return PlainTextResponse(str(response), media_type="application/xml")
+    
+    if patient_turn_count >= 15:
+        response.say("Thank you for your help. I think I have all the information I need. Goodbye.", voice="alice")
         response.hangup()
         return PlainTextResponse(str(response), media_type="application/xml")
     
@@ -129,7 +136,7 @@ async def handle_speech(request: Request):
                 response.append(gather)
                 return PlainTextResponse(str(response), media_type="application/xml")
         
-        play_url = f"{BASE_URL}/static/{audio_filename}"
+        play_url = f"{PUBLIC_URL}/static/{audio_filename}"
         response.play(play_url, voice="alice")
     except Exception as e:
         logger.error(f"TTS error: {e}")

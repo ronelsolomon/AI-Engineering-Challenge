@@ -217,7 +217,7 @@ class HybridTTS:
             
             try:
                 logger.info(f"TTS attempt {attempt + 1}: using {provider_name}")
-                audio = await asyncio.wait_for(provider.synthesize(text), timeout=30.0)
+                audio = await asyncio.wait_for(provider.synthesize(text), timeout=10.0)
                 if audio:
                     self.failures[provider_name] = 0
                     return audio, provider_name

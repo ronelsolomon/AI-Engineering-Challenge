@@ -189,7 +189,7 @@ class HybridLLM:
             
             try:
                 logger.info(f"LLM attempt {attempt + 1}: using {provider_name}")
-                response = await asyncio.wait_for(provider.generate(messages, max_tokens), timeout=30.0)
+                response = await asyncio.wait_for(provider.generate(messages, max_tokens), timeout=10.0)
                 self.failures[provider_name] = 0
                 return response, provider_name
             except asyncio.TimeoutError:

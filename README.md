@@ -52,7 +52,32 @@ python main.py status
 
 This shows which LLM, TTS, and tunnel providers are available and whether they're free or paid.
 
-### 4. Start Server + Tunnel
+### 4. Validate Setup (No Credits Used)
+
+Before making real calls, validate everything:
+
+```bash
+python main.py validate --webhook-url https://your-tunnel-url.trycloudflare.com
+```
+
+This checks:
+- Twilio credentials are valid
+- At least one LLM provider works
+- At least one TTS provider works
+- Server is reachable
+- Twilio phone number is active
+
+### 5. Dry Run (No Credits Used)
+
+Test the conversation logic without dialing:
+
+```bash
+python main.py dry-run --scenario appointment_simple
+```
+
+This simulates the full conversation in your terminal. No Twilio charges.
+
+### 6. Start Server + Tunnel
 
 **Option A: Using Cloudflare Tunnel (recommended, no auth needed)**
 ```bash
@@ -72,7 +97,21 @@ python main.py server --port 8000
 python start_ngrok.py
 ```
 
+**Important**: Set `PUBLIC_URL` in `.env` to your tunnel URL (e.g., `https://abc123.trycloudflare.com`). This is required for Twilio to fetch audio files.
+
 ## Usage
+
+### Validate Setup (Free)
+
+```bash
+python main.py validate --webhook-url https://your-tunnel-url.trycloudflare.com
+```
+
+### Dry Run (Free)
+
+```bash
+python main.py dry-run --scenario appointment_simple
+```
 
 ### Make a Single Call
 

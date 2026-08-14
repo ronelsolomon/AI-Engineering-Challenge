@@ -22,9 +22,9 @@ NGROK_AUTH_TOKEN = os.getenv("NGROK_AUTH_TOKEN")
 # Server
 SERVER_HOST = os.getenv("SERVER_HOST", "localhost")
 SERVER_PORT = int(os.getenv("SERVER_PORT", 8000))
-TEST_TARGET_NUMBER = os.getenv("TEST_TARGET_NUMBER", "+18054398008")
-
 BASE_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
+PUBLIC_URL = os.getenv("PUBLIC_URL", BASE_URL)
+TEST_TARGET_NUMBER = os.getenv("TEST_TARGET_NUMBER", "+18054398008")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 CALLS_DIR = os.path.join(DATA_DIR, "calls")
 TRANSCRIPTS_DIR = os.path.join(DATA_DIR, "transcripts")
