@@ -1,10 +1,9 @@
 import os
 import json
 import logging
-from openai import AsyncOpenAI
-from config import OPENAI_API_KEY, TRANSCRIPTS_DIR
+from typing import Optional
+from config import TRANSCRIPTS_DIR
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 logger = logging.getLogger(__name__)
 
 BUG_ANALYSIS_PROMPT = """You are a quality assurance analyst for a doctor's office AI voice agent. 
@@ -33,6 +32,18 @@ Transcript:
 {transcript}
 """
 
+_client = None
+
+def get_client():
+    global _client
+    if _client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY not set for bug analysis")
+        from openai import AsyncOpenAI
+        _client = AsyncOpenAI(api_key=api_key)
+    return _client
+
 async def analyze_transcript(transcript_path: str) -> list:
     with open(transcript_path, "r") as f:
         transcript = f.read()
@@ -41,6 +52,7 @@ async def analyze_transcript(transcript_path: str) -> list:
         return []
     
     try:
+        client = get_client()
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -67,8 +79,6 @@ async def analyze_transcript(transcript_path: str) -> list:
         return []
 
 async def analyze_all_transcripts() -> list:
-    import logging
-    logger = logging.getLogger(__name__)
     all_bugs = []
     
     for filename in os.listdir(TRANSCRIPTS_DIR):

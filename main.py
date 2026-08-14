@@ -3,14 +3,45 @@ import argparse
 import os
 import sys
 from datetime import datetime
-from config import BASE_URL, CALLS_DIR, TRANSCRIPTS_DIR, AUDIO_DIR
+from config import BASE_URL, CALLS_DIR, TRANSCRIPTS_DIR, AUDIO_DIR, SERVER_PORT
 from call_manager import start_call, get_recordings, download_recording
 from analyzer import analyze_all_transcripts
 from scenarios import SCENARIOS
+from providers.llm import HybridLLM
+from providers.tts import HybridTTS
+from providers.tunnel import HybridTunnel
 
 def ensure_dirs():
     for d in [CALLS_DIR, TRANSCRIPTS_DIR, AUDIO_DIR]:
         os.makedirs(d, exist_ok=True)
+
+def print_status():
+    print("=" * 60)
+    print("VOICE BOT TESTER - PROVIDER STATUS")
+    print("=" * 60)
+    
+    print("\n[LLM Providers]")
+    try:
+        llm = HybridLLM()
+        for p in llm.providers:
+            print(f"  [{'FREE' if p.is_free() else 'PAID'}] {p.get_name()}")
+    except Exception as e:
+        print(f"  ERROR: {e}")
+    
+    print("\n[TTS Providers]")
+    try:
+        tts = HybridTTS()
+        for p in tts.providers:
+            print(f"  [{'FREE' if p.is_free() else 'PAID'}] {p.get_name()}")
+    except Exception as e:
+        print(f"  ERROR: {e}")
+    
+    print("\n[Tunnel Providers]")
+    tunnel = HybridTunnel()
+    for p in tunnel.providers:
+        print(f"  [{'FREE' if p.is_free() else 'PAID'}] {p.get_name()}")
+    
+    print("\n" + "=" * 60)
 
 async def run_scenario(scenario_id: str, webhook_url: str):
     from call_manager import start_call as do_start_call
@@ -94,9 +125,25 @@ async def run_analysis():
     print(f"Bug report saved to {report_path}")
     return bugs
 
+async def run_tunnel(port: int):
+    tunnel = HybridTunnel()
+    print("Starting tunnel...")
+    url = await tunnel.start(port)
+    print(f"\nTunnel URL: {url}")
+    print(f"Server URL: http://localhost:{port}")
+    print("\nPress Ctrl+C to stop the tunnel")
+    
+    try:
+        while True:
+            await asyncio.sleep(1)
+    except KeyboardInterrupt:
+        print("\nStopping tunnel...")
+        await tunnel.stop()
+        print("Tunnel stopped.")
+
 def main():
     parser = argparse.ArgumentParser(description="Voice Bot Tester")
-    parser.add_argument("command", choices=["call", "batch", "analyze", "server", "simulate", "sim-batch"], help="Command to run")
+    parser.add_argument("command", choices=["call", "batch", "analyze", "server", "simulate", "sim-batch", "tunnel", "status"], help="Command to run")
     parser.add_argument("--scenario", default="appointment_simple", help="Scenario ID for single call")
     parser.add_argument("--scenarios", nargs="*", help="Scenario IDs for batch run")
     parser.add_argument("--webhook-url", default=BASE_URL, help="Public webhook URL")
@@ -104,10 +151,18 @@ def main():
     
     args = parser.parse_args()
     
-    if args.command == "server":
+    if args.command == "status":
+        print_status()
+    
+    elif args.command == "server":
         import uvicorn
         from server import app
+        print(f"Starting server on port {args.port}")
+        print(f"Webhook URL: {BASE_URL}")
         uvicorn.run(app, host="0.0.0.0", port=args.port)
+    
+    elif args.command == "tunnel":
+        asyncio.run(run_tunnel(args.port))
     
     elif args.command == "call":
         asyncio.run(run_scenario(args.scenario, args.webhook_url))

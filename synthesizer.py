@@ -1,20 +1,25 @@
-import os
-import io
-from openai import AsyncOpenAI
-from config import OPENAI_API_KEY
+import logging
+from providers.tts import HybridTTS
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+logger = logging.getLogger(__name__)
 
-async def synthesize(text: str, voice: str = "nova") -> bytes:
+_hybrid_tts = None
+
+def get_tts() -> HybridTTS:
+    global _hybrid_tts
+    if _hybrid_tts is None:
+        _hybrid_tts = HybridTTS()
+    return _hybrid_tts
+
+async def synthesize(text: str) -> bytes:
     if not text.strip():
         return b""
-    response = await client.audio.speech.create(
-        model="tts-1",
-        voice=voice,
-        input=text,
-        response_format="mp3",
-    )
-    audio_bytes = b""
-    async for chunk in response.iter_bytes():
-        audio_bytes += chunk
-    return audio_bytes
+    
+    try:
+        tts = get_tts()
+        audio, provider = await tts.synthesize(text)
+        logger.info(f"TTS synthesized using {provider}: {len(audio)} bytes")
+        return audio
+    except Exception as e:
+        logger.error(f"All TTS providers failed: {e}")
+        return b""

@@ -2,89 +2,123 @@
 
 ## System Overview
 
-The Voice Bot Tester is an automated system that places outbound calls to a test AI voice agent, simulates realistic patient conversations, and evaluates the agent's responses for bugs and quality issues. The system is built in Python and uses Twilio for telephony, OpenAI for LLM and TTS, and FastAPI for the webhook server.
+The Voice Bot Tester is an automated system that places outbound calls to a test AI voice agent, simulates realistic patient conversations, and evaluates the agent's responses for bugs and quality issues. The system uses a **hybrid, free-first provider architecture** with automatic fallbacks to minimize cost while maintaining reliability.
+
+## Hybrid Provider Architecture
+
+### Design Philosophy
+
+Instead of hard-coding a single provider for each function (LLM, TTS, tunnel), the system implements a provider abstraction layer. Each component tries providers in priority order, falling back automatically on failure. This ensures:
+- **Maximum free usage**: Primary providers are free whenever possible
+- **Reliability**: If one provider fails, the next takes over seamlessly
+- **Flexibility**: Users can configure any combination of providers via `.env`
+
+### LLM Providers (Priority Order)
+
+1. **Groq** (FREE) - 30 RPM, 14,400 requests/day, no credit card required
+   - Model: `llama-3.1-8b-instant`
+   - Best for: High-volume, fast inference
+   - Fallback trigger: Rate limit (429), timeout, server error
+
+2. **HuggingFace** (FREE) - $0.10/month free credits
+   - Model: `meta-llama/Llama-3.1-8B-Instruct`
+   - Best for: Backup when Groq limits are hit
+   - Fallback trigger: Rate limit, queue timeout
+
+3. **OpenAI** (PAID) - GPT-4o-mini
+   - Best for: Highest quality, last resort
+   - Fallback trigger: All free providers exhausted
+
+### TTS Providers (Priority Order)
+
+1. **Edge-TTS** (FREE) - Microsoft Edge browser TTS, no API key needed
+   - Voice: `en-US-AriaNeural`
+   - Best for: High-quality, zero-cost synthesis
+   - Fallback trigger: Network error, rate limit
+
+2. **gTTS** (FREE) - Google Translate TTS, no API key needed
+   - Best for: Backup when Edge-TTS fails
+   - Fallback trigger: HTTP 403/429, IP block
+   - Limit: ~50k characters/hour (unofficial)
+
+3. **pyttsx3** (FREE) - Offline system TTS
+   - Best for: Guaranteed offline availability
+   - Fallback trigger: All cloud providers fail
+   - Tradeoff: Robotic voice quality
+
+4. **OpenAI TTS** (PAID) - TTS-1 model
+   - Best for: Best voice quality, last resort
+   - Fallback trigger: All free providers exhausted
+
+### Tunnel Providers (Priority Order)
+
+1. **Cloudflare Quick Tunnel** (FREE) - No account, no auth token needed
+   - Command: `cloudflared tunnel --url http://localhost:8000`
+   - Best for: Instant, zero-config tunneling
+   - Tradeoff: Random URL, no SLA, dev/testing only
+
+2. **Ngrok** (FREE tier) - Requires auth token
+   - Best for: Stable free tier with request inspection
+   - Tradeoff: URL changes on restart, 20k req/month limit
+
+3. **Local only** (FREE) - No tunnel
+   - Best for: Testing without exposing to internet
+   - Tradeoff: Twilio cannot reach localhost
+
+### Telephony
+
+**Twilio** (PAID, ~$1-3 for 12 calls) - The only paid component
+- Required for actual phone calls to +1-805-439-8008
+- Challenge reimburses up to $20
+- No free alternative exists for outbound PSTN calls
 
 ## Architecture Decisions
 
 ### 1. Telephony: Twilio with TwiML `<Gather>` and `<Play>`
 
-I chose Twilio for telephony because it's the most reliable and widely-used cloud telephony platform with excellent Python SDK support. For the voice conversation loop, I initially considered Twilio Media Streams with bidirectional WebSockets for real-time audio streaming. However, after evaluating the complexity of audio format conversion (μ-law ↔ PCM), WebSocket lifecycle management, and potential audio overlap issues, I opted for a simpler TwiML-based approach using `<Gather>` for speech recognition and `<Play>` for audio playback.
+I chose Twilio for telephony because it's the most reliable cloud telephony platform. For the voice loop, I use TwiML `<Gather>` for speech recognition and `<Play>` for audio playback rather than WebSocket streaming.
 
 **Tradeoffs:**
-- **WebSocket approach**: Lower latency (~2s round-trip), supports barge-in, more control over audio. But requires complex audio format conversion, WebSocket state management, and has more failure points.
-- **TwiML approach**: Higher latency (~4-6s round-trip), no barge-in support, but much simpler to implement and debug. Reliable turn-taking behavior which aligns with the challenge requirements for "sensible turn-taking behavior."
+- **TwiML approach**: Higher latency (~4-6s round-trip), no barge-in, but simpler, more reliable, and provides sensible turn-taking behavior (explicitly requested in the challenge).
+- **WebSocket approach**: Lower latency, barge-in support, but requires complex audio format conversion and has more failure points.
 
-The TwiML approach provides a robust foundation that can be extended to WebSockets later if lower latency becomes critical.
+### 2. Conversation State Management
 
-### 2. LLM: OpenAI GPT-4o-mini
-
-I chose OpenAI GPT-4o-mini for conversation logic because it's fast, cost-effective, and produces natural conversational responses. The LLM acts as the "patient brain," generating contextually appropriate responses based on the conversation history and scenario goals.
-
-**Tradeoffs:**
-- **GPT-4o-mini**: Fast, cheap, good quality. Ideal for this use case.
-- **GPT-4o**: Higher quality but 3-5x more expensive and slightly slower.
-- **Claude/Anthropic**: Good quality but higher latency and different pricing model.
-
-The system prompt constrains the LLM to stay in character as a patient, keep responses short (1-3 sentences), and focus on achieving scenario goals. This minimizes token usage and keeps conversations natural.
-
-### 3. TTS: OpenAI TTS-1
-
-I chose OpenAI's TTS-1 model for speech synthesis because it produces highly natural-sounding audio with low latency. The audio is cached by content hash to avoid regenerating identical responses.
-
-**Tradeoffs:**
-- **OpenAI TTS-1**: Natural voice, low latency, simple REST API. Good for this use case.
-- **Deepgram Aura**: Also natural, but requires WebSocket connection for streaming.
-- **ElevenLabs**: Highest quality but higher cost and more complex API.
-
-The TTS audio is served statically from the FastAPI server and played into the call via Twilio's `<Play>` verb.
-
-### 4. STT: Twilio Built-in Speech Recognition
-
-I'm using Twilio's built-in speech recognition via the `<Gather>` verb instead of Deepgram or OpenAI Whisper. This eliminates the need for a separate transcription service and reduces API calls.
-
-**Tradeoffs:**
-- **Twilio STT**: Integrated with telephony, no separate API needed, good for short utterances. Accuracy is slightly lower than Deepgram for medical terminology.
-- **Deepgram STT**: Higher accuracy, real-time streaming, but requires WebSocket integration.
-- **OpenAI Whisper**: Highest accuracy but not real-time and requires audio file processing.
-
-For this challenge, Twilio STT is sufficient and simplifies the architecture.
-
-### 5. Server: FastAPI
-
-FastAPI was chosen for its async support, automatic OpenAPI documentation, and easy integration with Twilio webhooks. The server handles inbound webhooks from Twilio, manages conversation state, and serves static audio files.
-
-## Data Flow
-
-1. **Call Initiation**: User triggers `/start-call` endpoint → Twilio REST API creates outbound call
-2. **Call Connection**: Twilio calls the target number → Twilio requests `/twiml` → Server returns TwiML with `<Gather>`
-3. **Agent Speaks**: Agent's speech is captured by Twilio's speech recognition → Twilio POSTs transcript to `/handle-speech`
-4. **Response Generation**: Server saves transcript → LLM generates patient response → TTS synthesizes audio
-5. **Response Playback**: Server returns TwiML with `<Play>` → Twilio plays audio into the call
-6. **Loop**: Twilio executes `<Gather>` again → Agent responds → Repeat from step 3
-7. **Call End**: Twilio sends status callback → Server downloads recordings → Transcripts are saved
-
-## Conversation State Management
-
-The system maintains conversation state through:
+The system maintains state through:
 - **Transcript files**: One text file per call, appended with each exchange
 - **In-memory history**: Passed to the LLM for context-aware responses
-- **Scenario context**: Each scenario defines goals and initial context for the LLM
+- **Scenario context**: Each scenario defines goals and persona for the LLM
 
-## Bug Detection
+### 3. Bug Detection
 
-After calls complete, the system analyzes transcripts using an LLM to identify:
+After calls complete, transcripts are analyzed by an LLM to identify:
 - Factual errors (wrong dates, times, medications)
 - Hallucinations
 - Poor edge case handling
 - Incorrect confirmations
-- Missing verification steps
 
-The analysis is automated via the `/analyze` command which processes all transcripts and generates a structured bug report.
+## Data Flow
+
+1. **Call Initiation**: User triggers `/start-call` → Twilio REST API creates outbound call
+2. **Call Connection**: Twilio calls target → Twilio requests `/twiml` → Server returns TwiML with `<Gather>`
+3. **Agent Speaks**: Twilio STT captures speech → POSTs to `/handle-speech`
+4. **Response Generation**: Hybrid LLM generates patient response → Hybrid TTS synthesizes audio
+5. **Response Playback**: TwiML with `<Play>` delivers audio → Twilio plays into call
+6. **Loop**: Repeat from step 3 until conversation ends
+7. **Call End**: Twilio status callback → recordings downloaded → transcripts analyzed
+
+## Cost Optimization Strategy
+
+The system is designed to run **completely free except for Twilio telephony**:
+
+1. **Always try free first**: Groq, Edge-TTS, Cloudflare Tunnel are tried before any paid alternative
+2. **Graceful degradation**: If a free provider fails, the next provider takes over without user intervention
+3. **No hard dependencies on paid services**: The only required payment is Twilio for the actual phone call
+4. **Caching**: TTS audio is cached to avoid redundant synthesis calls
 
 ## Future Improvements
 
-If extending the system, the most impactful upgrade would be implementing Twilio Media Streams with Deepgram for:
-- Lower latency (~2s vs ~4-6s round-trip)
-- Higher STT accuracy
-- Barge-in support
-- Real-time conversation monitoring
+1. **WebSocket streaming**: Implement Twilio Media Streams with Deepgram for lower latency and barge-in
+2. **Local LLM**: Add Ollama as a fallback for completely offline operation
+3. **Provider health monitoring**: Track success rates and automatically reorder providers based on reliability
+4. **Batch processing**: Use Groq's Batch API for analyzing multiple transcripts simultaneously
